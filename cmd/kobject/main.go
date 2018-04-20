@@ -14,6 +14,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
+	defer c.Close()
 
 	for {
 		event, err := c.Receive()
