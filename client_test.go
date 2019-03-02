@@ -25,7 +25,7 @@ func TestClientReceive(t *testing.T) {
 			name: "no values",
 			b:    []byte("add@/devices/test\x00ACTION=add\x00DEVPATH=/devices/test\x00SUBSYSTEM=test\x00SEQNUM=1"),
 			e: &Event{
-				Action:     ActionAdd,
+				Action:     Add,
 				DevicePath: "/devices/test",
 				Subsystem:  "test",
 				Sequence:   1,
@@ -36,7 +36,7 @@ func TestClientReceive(t *testing.T) {
 			name: "USB device",
 			b:    []byte("add@/devices/pci0000:00/0000:00:14.0/usb3/3-2/3-2:1.0/0003:046D:C52B.0026\x00ACTION=add\x00DEVPATH=/devices/pci0000:00/0000:00:14.0/usb3/3-2/3-2:1.0/0003:046D:C52B.0026\x00SUBSYSTEM=hid\x00SEQNUM=4618\x00HID_UNIQ=\x00MODALIAS=hid:b0003g0000v0000046Dp0000C52B\x00HID_ID=0003:0000046D:0000C52B\x00HID_NAME=Logitech USB Receiver\x00HID_PHYS=usb-0000:00:14.0-2/input0"),
 			e: &Event{
-				Action:     ActionAdd,
+				Action:     Add,
 				DevicePath: "/devices/pci0000:00/0000:00:14.0/usb3/3-2/3-2:1.0/0003:046D:C52B.0026",
 				Subsystem:  "hid",
 				Sequence:   4618,
@@ -53,7 +53,7 @@ func TestClientReceive(t *testing.T) {
 			name: "TAP interface",
 			b:    []byte("remove@/devices/virtual/net/tap0\x00ACTION=remove\x00DEVPATH=/devices/virtual/net/tap0\x00SUBSYSTEM=net\x00SEQNUM=4636\x00INTERFACE=tap0\x00IFINDEX=28"),
 			e: &Event{
-				Action:     ActionRemove,
+				Action:     Remove,
 				DevicePath: "/devices/virtual/net/tap0",
 				Subsystem:  "net",
 				Sequence:   4636,

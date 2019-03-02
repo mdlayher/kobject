@@ -10,14 +10,14 @@ type Action string
 
 // Possible Actions which trigger an Event.
 const (
-	ActionAdd     Action = "add"
-	ActionBind    Action = "bind"
-	ActionRemove  Action = "remove"
-	ActionChange  Action = "change"
-	ActionMove    Action = "move"
-	ActionOnline  Action = "online"
-	ActionOffline Action = "offline"
-	ActionUnbind  Action = "unbind"
+	Add     = "add"
+	Bind    = "bind"
+	Remove  = "remove"
+	Change  = "change"
+	Move    = "move"
+	Online  = "online"
+	Offline = "offline"
+	Unbind  = "unbind"
 )
 
 // An Event is a userspace event in response to a state change of a kobject.
