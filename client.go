@@ -10,23 +10,28 @@ package kobject
 
 import (
 	"bytes"
+	"fmt"
 	"io"
+	"time"
 )
 
 // A Client provides access to Linux kobject userspace events.
 type Client struct {
+	// To read events and close the handle, an io.ReadCloser contains the
+	// minimum required functionality. rc must also implement conn (e.g. as the
+	// Linux sysConn type) for deadline support.
 	rc io.ReadCloser
 }
 
 // New creates a new Client.
 func New() (*Client, error) {
 	// OS-specific (netlink) initialization.
-	rc, err := newReadCloser()
+	conn, err := newConn()
 	if err != nil {
 		return nil, err
 	}
 
-	return newClient(rc)
+	return newClient(conn)
 }
 
 // newClient is the internal constructor for a Client, used in tests.
@@ -59,4 +64,25 @@ func (c *Client) Receive() (*Event, error) {
 	}
 
 	return parseEvent(fields[1:])
+}
+
+// SetDeadline sets the read deadline associated with the connection.
+func (c *Client) SetDeadline(t time.Time) error {
+	conn, ok := c.rc.(conn)
+	if !ok {
+		panicf("kobject: BUG: deadlines not supported on internal conn type: %#v", c.rc)
+	}
+
+	return conn.SetDeadline(t)
+}
+
+// A conn is the full set of required functionality for an internal type to
+// expose via Client.
+type conn interface {
+	io.ReadCloser
+	SetDeadline(t time.Time) error
+}
+
+func panicf(format string, a ...interface{}) {
+	panic(fmt.Sprintf(format, a...))
 }
