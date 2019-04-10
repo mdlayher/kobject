@@ -12,15 +12,16 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"time"
 )
 
 // A Client provides access to Linux kobject userspace events.
 type Client struct {
-	// To read events and close the handle, an io.ReadCloser contains the
+	// To read events and close the handle, a tryReadCloser contains the
 	// minimum required functionality. rc must also implement conn (e.g. as the
 	// Linux sysConn type) for deadline support.
-	rc io.ReadCloser
+	rc tryReadCloser
 }
 
 // New creates a new Client.
@@ -35,7 +36,7 @@ func New() (*Client, error) {
 }
 
 // newClient is the internal constructor for a Client, used in tests.
-func newClient(rc io.ReadCloser) (*Client, error) {
+func newClient(rc tryReadCloser) (*Client, error) {
 	return &Client{
 		rc: rc,
 	}, nil
@@ -49,21 +50,35 @@ func (c *Client) Close() error {
 // Receive waits until a kobject userspace event is triggered, and then returns
 // the Event.
 func (c *Client) Receive() (*Event, error) {
-	b := make([]byte, 2048)
-	n, err := c.rc.Read(b)
-	if err != nil {
-		return nil, err
-	}
+	// Allocate a reasonable amount of space for a single Event.
+	b := make([]byte, os.Getpagesize())
 
-	// Fields are NULL-delimited.  Expect at least two fields, though the
-	// first is ignored because it provides identical information to fields
-	// which occur later on in the easy to parse KEY=VALUE format.
-	fields := bytes.Split(b[:n], []byte{0x00})
-	if len(fields) < 2 {
-		return nil, io.ErrUnexpectedEOF
-	}
+	for {
+		// Attempt to read an Event using the buffer we have allocated.
+		n, done, err := c.rc.TryRead(b)
+		if err != nil {
+			return nil, err
+		}
 
-	return parseEvent(fields[1:])
+		if !done {
+			// The read couldn't complete because our buffer was too small;
+			// double the size and try again.
+			b = make([]byte, len(b)*2)
+			continue
+		}
+
+		// We've completed reading, now parse the Event.
+
+		// Fields are NULL-delimited.  Expect at least two fields, though the
+		// first is ignored because it provides identical information to fields
+		// which occur later on in the easy to parse KEY=VALUE format.
+		fields := bytes.Split(b[:n], []byte{0x00})
+		if len(fields) < 2 {
+			return nil, io.ErrUnexpectedEOF
+		}
+
+		return parseEvent(fields[1:])
+	}
 }
 
 // SetDeadline sets the read deadline associated with the connection.
@@ -79,8 +94,18 @@ func (c *Client) SetDeadline(t time.Time) error {
 // A conn is the full set of required functionality for an internal type to
 // expose via Client.
 type conn interface {
-	io.ReadCloser
+	tryReadCloser
 	SetDeadline(t time.Time) error
+}
+
+type tryReadCloser interface {
+	io.Closer
+
+	// TryRead attempts to read from an io.Reader and reports whether it was
+	// able to make any progress. If done is false, no bytes were read because
+	// the buffer b was too small. If done is true, n indicates the number of
+	// bytes read from the underlying io.Reader.
+	TryRead(b []byte) (n int, done bool, err error)
 }
 
 func panicf(format string, a ...interface{}) {
