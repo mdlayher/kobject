@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/mdlayher/kobject"
@@ -13,11 +14,12 @@ import (
 
 func main() {
 	var (
+		nFlag = flag.Int("n", os.Getpagesize(), "number of bytes for buffer")
 		tFlag = flag.Duration("t", 0*time.Second, "the amount of time to wait between events before timing out (default: forever)")
 	)
 	flag.Parse()
 
-	c, err := kobject.New()
+	c, err := kobject.New(*nFlag)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
