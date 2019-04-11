@@ -68,7 +68,7 @@ func (sc *sysConn) TryRead(b []byte) (int, bool, error) {
 			return handle(err)
 		}
 
-		if len(b) < n {
+		if len(b) <= n {
 			// The buffer isn't large enough to be filled in one call to Read.
 			// Inform the poller that we're immediately ready for more I/O, but
 			// also inform the caller that TryRead didn't complete.
