@@ -3,15 +3,17 @@ package kobject
 import (
 	"bytes"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
 
+// page is a byte slice large enough that any additional data will trigger
+// multiple calls to tryReadCloser.TryRead.
+var page = bytes.Repeat([]byte{'f'}, os.Getpagesize())
+
 func TestClientReceive(t *testing.T) {
-	// A byte slice large enough that any additional data will trigger multiple
-	// calls to tryReadCloser.TryRead.
-	page := bytes.Repeat([]byte{'f'}, os.Getpagesize())
 
 	tests := []struct {
 		name  string
@@ -131,11 +133,71 @@ func TestClientReceive(t *testing.T) {
 	}
 }
 
+func TestClientReceiveConcurrent(t *testing.T) {
+	b := append(
+		[]byte("remove@/devices/virtual/net/tap0\x00ACTION=remove\x00DEVPATH=/devices/virtual/net/tap0\x00SUBSYSTEM=net\x00SEQNUM=4636\x00INTERFACE=tap0\x00IFINDEX=28\x00ARBITRARY="),
+		// Ensure this message is too large to fit in one page of memory,
+		// triggering multiple TryRead calls.
+		append(page, 0x00)...,
+	)
+
+	want := &Event{
+		Action:     Remove,
+		DevicePath: "/devices/virtual/net/tap0",
+		Subsystem:  "net",
+		Sequence:   4636,
+		Values: map[string]string{
+			"IFINDEX":   "28",
+			"INTERFACE": "tap0",
+			"ARBITRARY": string(page),
+		},
+	}
+
+	c, done := testClient(t, b)
+
+	execN := func(n int) {
+		for i := 0; i < n; i++ {
+			e, err := c.Receive()
+			if err != nil {
+				panicf("failed to receive: %v", err)
+			}
+
+			if diff := cmp.Diff(want, e); diff != "" {
+				panicf("unexpected event (-want +got):\n%s", diff)
+			}
+		}
+	}
+
+	const (
+		workers    = 4
+		iterations = 10000
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			execN(iterations)
+		}()
+	}
+
+	wg.Wait()
+
+	// Expect the buffer to be grown exactly once, because the event is larger
+	// than one page of memory.
+	size := workers*iterations + 1
+	if diff := cmp.Diff(size, done()); diff != "" {
+		t.Fatalf("unexpected number of reads (-want +got):\n%s", diff)
+	}
+}
+
 func testClient(t *testing.T, b []byte) (*Client, func() int) {
 	t.Helper()
 
 	rc := &testTryReadCloser{
-		br: bytes.NewReader(b),
+		b: b,
 	}
 
 	c, err := newClient(rc)
@@ -154,21 +216,25 @@ func testClient(t *testing.T, b []byte) (*Client, func() int) {
 }
 
 type testTryReadCloser struct {
-	br    *bytes.Reader
+	mu    sync.Mutex
+	b     []byte
 	calls int
 }
 
 func (rc *testTryReadCloser) TryRead(b []byte) (int, bool, error) {
+	rc.mu.Lock()
 	rc.calls++
+	rc.mu.Unlock()
 
-	// Is b large enough to fit the contents of the bytes.Reader in one call?
-	if len(b) < rc.br.Len() {
+	// Is b large enough to fit the contents of the bytes in one call?
+	if len(b) < len(rc.b) {
 		// No, indicate the caller should try again.
 		return 0, false, nil
 	}
 
-	// Yes, proceed with Read.
-	n, err := rc.br.Read(b)
+	// Yes, proceed with Read. Create a new bytes.Reader on each invocation
+	// so that the same data can be read multiple times.
+	n, err := bytes.NewReader(rc.b).Read(b)
 	return n, true, err
 }
 

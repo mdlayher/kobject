@@ -13,15 +13,22 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 )
 
-// A Client provides access to Linux kobject userspace events.
+// A Client provides access to Linux kobject userspace events. Clients are safe
+// for concurrent use.
 type Client struct {
 	// To read events and close the handle, a tryReadCloser contains the
 	// minimum required functionality. rc must also implement conn (e.g. as the
 	// Linux sysConn type) for deadline support.
 	rc tryReadCloser
+
+	// A buffer used to read kobject uevents directly from the socket, before
+	// they are parsed into Events.
+	mu sync.Mutex
+	b  []byte
 }
 
 // New creates a new Client.
@@ -39,6 +46,11 @@ func New() (*Client, error) {
 func newClient(rc tryReadCloser) (*Client, error) {
 	return &Client{
 		rc: rc,
+
+		// Allocate a reasonable amount of space for a single Event, but the
+		// buffer can also be grown if an event arrives and is too large to fit
+		// in the buffer.
+		b: make([]byte, os.Getpagesize()),
 	}, nil
 }
 
@@ -50,12 +62,12 @@ func (c *Client) Close() error {
 // Receive waits until a kobject userspace event is triggered, and then returns
 // the Event.
 func (c *Client) Receive() (*Event, error) {
-	// Allocate a reasonable amount of space for a single Event.
-	b := make([]byte, os.Getpagesize())
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	for {
 		// Attempt to read an Event using the buffer we have allocated.
-		n, done, err := c.rc.TryRead(b)
+		n, done, err := c.rc.TryRead(c.b)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +75,7 @@ func (c *Client) Receive() (*Event, error) {
 		if !done {
 			// The read couldn't complete because our buffer was too small;
 			// double the size and try again.
-			b = make([]byte, len(b)*2)
+			c.b = append(c.b, make([]byte, len(c.b))...)
 			continue
 		}
 
@@ -72,7 +84,7 @@ func (c *Client) Receive() (*Event, error) {
 		// Fields are NULL-delimited.  Expect at least two fields, though the
 		// first is ignored because it provides identical information to fields
 		// which occur later on in the easy to parse KEY=VALUE format.
-		fields := bytes.Split(b[:n], []byte{0x00})
+		fields := bytes.Split(c.b[:n], []byte{0x00})
 		if len(fields) < 2 {
 			return nil, io.ErrUnexpectedEOF
 		}
