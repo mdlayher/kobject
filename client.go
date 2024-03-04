@@ -59,6 +59,14 @@ func (c *Client) Close() error {
 	return c.rc.Close()
 }
 
+// SetReceiveBuffer sets the size of the buffer used to read kobject uevents.
+func (c *Client) SetReceiveBuffer(size int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.b = make([]byte, size)
+}
+
 // Receive waits until a kobject userspace event is triggered, and then returns
 // the Event.
 func (c *Client) Receive() (*Event, error) {
@@ -103,11 +111,24 @@ func (c *Client) SetDeadline(t time.Time) error {
 	return conn.SetDeadline(t)
 }
 
+// SetReadBuffer sets the read buffer size associated with the connection.
+//
+// When the buffer is too small, kernel events are dropped with ENOBUFS error.
+func (c *Client) SetReadBuffer(bytes int) error {
+	conn, ok := c.rc.(conn)
+	if !ok {
+		panicf("kobject: BUG: read buffer size not supported on internal conn type: %#v", c.rc)
+	}
+
+	return conn.SetReadBuffer(bytes)
+}
+
 // A conn is the full set of required functionality for an internal type to
 // expose via Client.
 type conn interface {
 	tryReadCloser
 	SetDeadline(t time.Time) error
+	SetReadBuffer(bytes int) error
 }
 
 type tryReadCloser interface {

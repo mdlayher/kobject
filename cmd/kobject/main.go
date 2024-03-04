@@ -14,6 +14,7 @@ import (
 func main() {
 	var (
 		tFlag = flag.Duration("t", 0*time.Second, "the amount of time to wait between events before timing out (default: forever)")
+		rFlag = flag.Int("r", 0, "the size of the read buffer for kobject events (0 for default size)")
 	)
 	flag.Parse()
 
@@ -22,6 +23,12 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 	defer c.Close()
+
+	if *rFlag != 0 {
+		if err = c.SetReadBuffer(*rFlag); err != nil {
+			log.Fatalf("failed to set read buffer: %v", err)
+		}
+	}
 
 	for {
 		if *tFlag > 0 {

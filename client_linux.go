@@ -1,4 +1,5 @@
-//+build linux
+//go:build linux
+// +build linux
 
 package kobject
 
@@ -90,3 +91,4 @@ func (sc *sysConn) TryRead(b []byte) (int, bool, error) {
 
 func (sc *sysConn) Close() error                  { return sc.c.Close() }
 func (sc *sysConn) SetDeadline(t time.Time) error { return sc.c.SetDeadline(t) }
+func (sc *sysConn) SetReadBuffer(bytes int) error { return sc.c.SetReadBuffer(bytes) }
